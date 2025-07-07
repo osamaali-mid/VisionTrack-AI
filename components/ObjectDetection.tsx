@@ -137,12 +137,19 @@ export default function ObjectDetection() {
     } else if (isVideo) {
       setDetectionMode('video');
       setVideoFile(file);
+      setIsVideoReady(false);
+      setIsVideoPlaying(false);
+      setIsDetecting(false);
       const url = URL.createObjectURL(file);
       if (videoRef.current) {
         videoRef.current.src = url;
-        videoRef.current.load();
+        videoRef.current.onloadeddata = () => {
+          setIsVideoReady(true);
+        };
+        videoRef.current.onerror = () => {
+          setError('Failed to load video. Please try a different file.');
+        };
       }
-      setIsVideoReady(false);
     }
   };
 
@@ -303,22 +310,18 @@ export default function ObjectDetection() {
 
   const playVideo = () => {
     if (videoRef.current) {
-      if (videoRef.current.readyState >= 2) {
-        const playPromise = videoRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise.then(() => {
-            setIsVideoPlaying(true);
-            // Start detection if it's enabled
-            if (isDetecting) {
-              detectObjectsInVideo(videoRef.current!);
-            }
-          }).catch(err => {
-            console.error('Error playing video:', err);
-            setError('Failed to play video. Please try again.');
-          });
-        }
-      } else {
-        setError('Video is still loading. Please wait a moment and try again.');
+      const playPromise = videoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          setIsVideoPlaying(true);
+          // Start detection if it's enabled
+          if (isDetecting) {
+            detectObjectsInVideo(videoRef.current!);
+          }
+        }).catch(err => {
+          console.error('Error playing video:', err);
+          setError('Failed to play video. Please try again.');
+        });
       }
     }
   };
@@ -353,6 +356,11 @@ export default function ObjectDetection() {
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
     }
+  };
+
+  // Handle video loaded data
+  const handleVideoLoadedData = () => {
+    setIsVideoReady(true);
   };
   const drawDetections = (source: HTMLImageElement | HTMLVideoElement, detections: Detection[]) => {
     const canvas = canvasRef.current;
@@ -417,25 +425,21 @@ export default function ObjectDetection() {
 
   const clearResults = () => {
     setDetectionResults([]);
-    setIsVideoReady(false);
     setSelectedImage(null);
+    setIsVideoReady(false);
+    setIsVideoPlaying(false);
     setVideoFile(null);
     setError(null);
     setDetectionCount(0);
-      // Wait for video to be ready
-      videoRef.current.onloadeddata = () => {
-        setIsVideoReady(true);
-      };
-      videoRef.current.onerror = () => {
-        setError('Failed to load video. Please try a different file.');
-      };
     setFps(0);
+    setIsDetecting(false);
     stopWebcam();
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
     if (videoRef.current) {
       videoRef.current.src = '';
+      videoRef.current.load();
     }
   };
 
@@ -675,8 +679,8 @@ export default function ObjectDetection() {
               className="w-full max-h-96 rounded-lg bg-black"
               onPlay={handleVideoPlay}
               onPause={handleVideoPause}
-              onLoadedData={handleVideoReady}
-              onCanPlay={handleVideoReady}
+              onLoadedData={handleVideoLoadedData}
+              onCanPlay={handleVideoLoadedData}
               preload="metadata"
             />
             {isDetecting && (
