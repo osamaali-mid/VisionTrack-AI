@@ -192,22 +192,22 @@ export default function ObjectDetection() {
   };
 
   const detectObjectsInVideo = async (video: HTMLVideoElement) => {
-    if (!model || !video || !isDetecting) return;
+    if (!model || !video || !isDetecting || video.readyState < 2) return;
     
     // Check if video element has valid dimensions
     const width = video.videoWidth || video.width;
     const height = video.videoHeight || video.height;
     
     if (width === 0 || height === 0) {
-      // Video not ready yet, try again in next frame
+      // Video dimensions not available yet, try again
       if (isDetecting) {
-        animationFrameRef.current = requestAnimationFrame(() => detectObjectsInVideo(video));
+        setTimeout(() => detectObjectsInVideo(video), 100);
       }
       return;
     }
     
-    // For video files, check if playing
-    if (detectionMode === 'video' && video.paused) return;
+    // For video files, check if playing and ready
+    if (detectionMode === 'video' && (video.paused || video.ended)) return;
 
     try {
       const predictions = await model.detect(video);
@@ -303,24 +303,22 @@ export default function ObjectDetection() {
 
   const playVideo = () => {
     if (videoRef.current) {
-      const playPromise = videoRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.then(() => {
-          setIsVideoPlaying(true);
-          // Start detection if it's enabled
-          if (isDetecting) {
-            detectObjectsInVideo(videoRef.current!);
-          }
-        }).catch(err => {
-          console.error('Error playing video:', err);
-          setError('Failed to play video. Please try again.');
-        });
-      } else {
-        setIsVideoPlaying(true);
-        // Start detection if it's enabled
-        if (isDetecting) {
-          detectObjectsInVideo(videoRef.current);
+      if (videoRef.current.readyState >= 2) {
+        const playPromise = videoRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            setIsVideoPlaying(true);
+            // Start detection if it's enabled
+            if (isDetecting) {
+              detectObjectsInVideo(videoRef.current!);
+            }
+          }).catch(err => {
+            console.error('Error playing video:', err);
+            setError('Failed to play video. Please try again.');
+          });
         }
+      } else {
+        setError('Video is still loading. Please wait a moment and try again.');
       }
     }
   };
@@ -419,12 +417,19 @@ export default function ObjectDetection() {
 
   const clearResults = () => {
     setDetectionResults([]);
+    setIsVideoReady(false);
     setSelectedImage(null);
     setVideoFile(null);
     setError(null);
     setDetectionCount(0);
+      // Wait for video to be ready
+      videoRef.current.onloadeddata = () => {
+        setIsVideoReady(true);
+      };
+      videoRef.current.onerror = () => {
+        setError('Failed to load video. Please try a different file.');
+      };
     setFps(0);
-    setIsVideoReady(false);
     stopWebcam();
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -670,11 +675,21 @@ export default function ObjectDetection() {
               className="w-full max-h-96 rounded-lg bg-black"
               onPlay={handleVideoPlay}
               onPause={handleVideoPause}
-              onLoadedData={handleVideoReady}
+              onLoadedData={handleVideoLoadedData}
+              onCanPlay={handleVideoLoadedData}
+              preload="metadata"
             />
             {isDetecting && (
               <div className="absolute top-4 left-4 bg-black/70 text-white px-3 py-1 rounded-lg text-sm">
                 FPS: {fps} | Detections: {detectionCount}
+              </div>
+            )}
+            {!isVideoReady && videoFile && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg">
+                <div className="text-white text-center">
+                  <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                  <p>Loading video...</p>
+                </div>
               </div>
             )}
           </div>
