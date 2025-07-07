@@ -192,7 +192,13 @@ export default function ObjectDetection() {
   };
 
   const detectObjectsInVideo = async (video: HTMLVideoElement) => {
-    if (!model || !video || video.paused || video.ended) return;
+    if (!model || !video) return;
+    
+    // For webcam, check if video is playing
+    if (detectionMode === 'webcam' && (video.paused || video.ended || video.readyState < 2)) return;
+    
+    // For video files, check if video is ready and playing
+    if (detectionMode === 'video' && (video.paused || video.ended || video.readyState < 3)) return;
 
     try {
       const predictions = await model.detect(video);
@@ -228,6 +234,7 @@ export default function ObjectDetection() {
   const startWebcam = async () => {
     try {
       setError(null);
+      setIsDetecting(false);
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { 
           width: { ideal: 1280 },
@@ -239,7 +246,7 @@ export default function ObjectDetection() {
       streamRef.current = stream;
       if (webcamRef.current) {
         webcamRef.current.srcObject = stream;
-        webcamRef.current.play();
+        await webcamRef.current.play();
       }
       setIsWebcamActive(true);
       setDetectionMode('webcam');
@@ -264,12 +271,6 @@ export default function ObjectDetection() {
   const toggleDetection = () => {
     if (!model) return;
 
-    // For video mode, ensure video is ready before starting detection
-    if (detectionMode === 'video' && !isVideoReady) {
-      setError('Please wait for the video to load completely before starting detection.');
-      return;
-    }
-
     if (isDetecting) {
       setIsDetecting(false);
       if (animationFrameRef.current) {
@@ -281,21 +282,31 @@ export default function ObjectDetection() {
       fpsCounterRef.current = 0;
       lastFrameTimeRef.current = performance.now();
       
-      if (detectionMode === 'webcam' && webcamRef.current) {
-        detectObjectsInVideo(webcamRef.current);
-      } else if (detectionMode === 'video' && videoRef.current) {
-        detectObjectsInVideo(videoRef.current);
-      }
+      // Start detection loop
+      const startDetectionLoop = () => {
+        if (detectionMode === 'webcam' && webcamRef.current) {
+          detectObjectsInVideo(webcamRef.current);
+        } else if (detectionMode === 'video' && videoRef.current) {
+          detectObjectsInVideo(videoRef.current);
+        }
+      };
+      
+      // Small delay to ensure video is ready
+      setTimeout(startDetectionLoop, 100);
     }
   };
 
   const playVideo = () => {
     if (videoRef.current) {
-      videoRef.current.play();
-      setIsVideoPlaying(true);
-      if (isDetecting) {
-        detectObjectsInVideo(videoRef.current);
-      }
+      videoRef.current.play().then(() => {
+        setIsVideoPlaying(true);
+        if (isDetecting) {
+          setTimeout(() => detectObjectsInVideo(videoRef.current!), 100);
+        }
+      }).catch(err => {
+        console.error('Error playing video:', err);
+        setError('Failed to play video. Please try again.');
+      });
     }
   };
 
@@ -303,6 +314,24 @@ export default function ObjectDetection() {
     if (videoRef.current) {
       videoRef.current.pause();
       setIsVideoPlaying(false);
+    }
+  };
+
+  // Handle webcam video ready state
+  const handleWebcamReady = () => {
+    if (webcamRef.current && webcamRef.current.readyState >= 2) {
+      // Webcam is ready, can start detection if needed
+      if (isDetecting) {
+        detectObjectsInVideo(webcamRef.current);
+      }
+    }
+  };
+
+  // Handle video file ready state
+  const handleVideoReady = () => {
+    setIsVideoReady(true);
+    if (isDetecting && videoRef.current && !videoRef.current.paused) {
+      detectObjectsInVideo(videoRef.current);
     }
   };
 
@@ -531,10 +560,11 @@ export default function ObjectDetection() {
               {isWebcamActive && (
                 <button
                   onClick={toggleDetection}
+                  disabled={!model}
                   className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-300 ${
                     isDetecting
                       ? 'bg-red-600 hover:bg-red-700 text-white'
-                      : 'bg-green-600 hover:bg-green-700 text-white'
+                      : `${model ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400 cursor-not-allowed'} text-white`
                   }`}
                 >
                   {isDetecting ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
@@ -558,6 +588,8 @@ export default function ObjectDetection() {
                 autoPlay
                 playsInline
                 muted
+                onLoadedData={handleWebcamReady}
+                onCanPlay={handleWebcamReady}
                 className="w-full max-h-96 rounded-lg bg-black"
               />
               {isDetecting && (
@@ -594,12 +626,12 @@ export default function ObjectDetection() {
               </button>
               <button
                 onClick={toggleDetection}
+                disabled={!model || (detectionMode === 'video' && !isVideoReady)}
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-300 ${
                   isDetecting
                     ? 'bg-red-600 hover:bg-red-700 text-white'
-                    : `${isVideoReady ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400 cursor-not-allowed'} text-white`
+                    : `${model && (detectionMode !== 'video' || isVideoReady) ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400 cursor-not-allowed'} text-white`
                 }`}
-                disabled={!isVideoReady && !isDetecting}
               >
                 <Eye className="w-4 h-4" />
                 <span>{isDetecting ? 'Stop' : 'Start'} Detection</span>
@@ -614,7 +646,8 @@ export default function ObjectDetection() {
               className="w-full max-h-96 rounded-lg bg-black"
               onPlay={() => setIsVideoPlaying(true)}
               onPause={() => setIsVideoPlaying(false)}
-              onLoadedMetadata={() => setIsVideoReady(true)}
+              onLoadedMetadata={handleVideoReady}
+              onCanPlay={handleVideoReady}
             />
             {isDetecting && (
               <div className="absolute top-4 left-4 bg-black/70 text-white px-3 py-1 rounded-lg text-sm">
