@@ -1,54 +1,124 @@
-<!DOCTYPE html>
-<html lang="en">
-<body>
-    <div class="container">
-        <h1>Object Detection Full Stack Project</h1>
-        <img src="demo.gif" alt="Project Demo">
-        <p>This project is a full stack application for object detection using Next.js as the frontend framework, TensorFlow.js with MobileNet-v2 as the computer vision model, trained on the COCO dataset. The application allows users to upload images and detect objects within them using the pre-trained model.</p>
-        <h2>Features</h2>
-        <ul>
-            <li><strong>Object Detection:</strong> Utilizes MobileNet-v2 model for accurate object detection.</li>
-            <li><strong>User-friendly Interface:</strong> Developed with Next.js, providing a smooth and intuitive user experience.</li>
-            <li><strong>Real-time Detection:</strong> Provides real-time detection of objects within uploaded images.</li>
-        </ul>
-        <h2>Deployment</h2>
-        <p>The project is deployed on <a href="https://vercel.com/">Vercel Cloud</a> and can be accessed <a href="https://camvision-ai-computer-vision-based-object-detection.vercel.app/">here</a>.</p>
-        <h2>Usage</h2>
-        <h3>Prerequisites</h3>
-        <ul>
-            <li>Node.js installed on your machine</li>
-        </ul>
-        <h3>Installation</h3>
-        <div class="code">
-            <p>git clone https://github.com/shubham5027/CamvisionAI-computer-vision-based-object-Detection.git</p>
-            <p>cd object-detection-project</p>
-            <p>npm install i</p>
-        </div>
-        <h3>Running the Application</h3>
-        <div class="code">
-            <p>npm run dev</p>
-        </div>
-        <p>Open your browser and visit <code>http://localhost:3000</code> to view the application.</p>
-        <h3>Deploying on Vercel</h3>
-        <p>To deploy the application on Vercel, follow these steps:</p>
-        <ol>
-            <li>Sign up or log in to your Vercel account.</li>
-            <li>Connect your GitHub repository to Vercel.</li>
-            <li>Configure the deployment settings as needed.</li>
-            <li>Deploy the application.</li>
-        </ol>
-        <h2>Demo</h2>
-        <p>Check out the demo video showcasing the project functionality:</p>
-        <h2>Contributing</h2>
-        <p>Contributions are welcome! Please feel free to submit a pull request.</p>
-        <h2>License</h2>
-        <p>This project is licensed under the <a href="LICENSE">MIT License</a>.</p>
-    </div>
-</body>
+# CamVision AI - Object Detection App
 
-</html>
+A modern, full-stack object detection application built with Next.js, TensorFlow.js, and MobileNet-v2. This application allows users to upload images and detect objects in real-time using advanced computer vision technology.
 
-![Screenshot 2024-03-13 230528](https://github.com/shubham5027/CamvisionAI-Computer-Vision-Based-object-Detection/assets/132193443/7c261fd5-ef34-44ca-86b3-493779e67c0d)
+![CamVision AI Demo](https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg?auto=compress&cs=tinysrgb&w=1200)
 
- [screen-capture (1).webm](https://github.com/shubham5027/CamvisionAI-Computer-Vision-Based-object-Detection/assets/132193443/7cfa41e6-e621-443c-be50-260b00aacacb)
+## 🚀 Features
 
+- **Real-time Object Detection**: Utilizes MobileNet-v2 model for accurate object detection
+- **Modern UI/UX**: Built with Next.js 14, Tailwind CSS, and Framer Motion
+- **Privacy-First**: All processing happens in the browser - your images never leave your device
+- **80+ Object Classes**: Trained on the comprehensive COCO dataset
+- **Responsive Design**: Works seamlessly on desktop, tablet, and mobile devices
+- **Export Results**: Download detection results with bounding boxes and labels
+- **Drag & Drop**: Intuitive file upload with drag and drop support
+
+## 🛠️ Tech Stack
+
+- **Frontend**: Next.js 14, React 18, TypeScript
+- **Styling**: Tailwind CSS with custom glass morphism design
+- **AI/ML**: TensorFlow.js, COCO-SSD model
+- **Icons**: Lucide React
+- **Deployment**: Vercel
+
+## 🏃‍♂️ Quick Start
+
+### Prerequisites
+
+- Node.js 18+ installed on your machine
+- npm or yarn package manager
+
+### Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/shubham5027/CamvisionAI-computer-vision-based-object-Detection.git
+cd CamvisionAI-computer-vision-based-object-Detection
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Run the development server:
+```bash
+npm run dev
+```
+
+4. Open your browser and visit `http://localhost:3000`
+
+## 🎯 How It Works
+
+1. **Model Loading**: The app automatically loads the pre-trained COCO-SSD model when you first visit
+2. **Image Upload**: Users can drag & drop or click to upload images (supports JPG, PNG, GIF up to 10MB)
+3. **Object Detection**: TensorFlow.js processes the image and identifies objects with confidence scores
+4. **Visualization**: Detected objects are highlighted with bounding boxes and labels
+5. **Export**: Users can download the annotated results
+
+## 🎨 Design Features
+
+- **Glass Morphism**: Modern frosted glass effect with backdrop blur
+- **Gradient Animations**: Smooth color transitions and hover effects
+- **Responsive Layout**: Optimized for all screen sizes
+- **Dark Mode Support**: Automatic theme detection
+- **Loading States**: Elegant loading animations and progress indicators
+
+## 📊 Supported Objects
+
+The model can detect 80+ object classes including:
+- People, animals, vehicles
+- Household items, furniture
+- Food items, kitchen utensils
+- Sports equipment, electronics
+- And many more from the COCO dataset
+
+## 🚀 Deployment
+
+### Deploy on Vercel
+
+1. Fork this repository
+2. Connect your GitHub account to Vercel
+3. Import the project and deploy
+4. Your app will be live at `https://your-app-name.vercel.app`
+
+### Deploy on Netlify
+
+1. Build the project:
+```bash
+npm run build
+```
+
+2. Deploy the `out` folder to Netlify
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+
+1. Fork the project
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- [TensorFlow.js](https://www.tensorflow.org/js) for the machine learning framework
+- [COCO Dataset](https://cocodataset.org/) for the training data
+- [Next.js](https://nextjs.org/) for the React framework
+- [Tailwind CSS](https://tailwindcss.com/) for the styling system
+- [Lucide](https://lucide.dev/) for the beautiful icons
+
+## 📞 Contact
+
+- GitHub: [@shubham5027](https://github.com/shubham5027)
+- Live Demo: [CamVision AI](https://camvision-ai-computer-vision-based-object-detection.vercel.app/)
+
+---
+
+Made with ❤️ by [Shubham](https://github.com/shubham5027)
