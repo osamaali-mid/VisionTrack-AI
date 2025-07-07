@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Upload, Camera, Zap, Eye, Download, Trash2, AlertCircle, Video, Play, Pause, Square, RotateCcw } from 'lucide-react';
+import { Upload, Camera, Zap, Eye, Download, RotateCcw, AlertCircle, Video } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
 
@@ -30,24 +30,8 @@ export default function ObjectDetection() {
   const [error, setError] = useState<string | null>(null);
   const [detectionMode, setDetectionMode] = useState<DetectionMode>('image');
   
-  // Video/Webcam specific states
-  const [isWebcamActive, setIsWebcamActive] = useState(false);
-  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
-  const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [isDetecting, setIsDetecting] = useState(false);
-  const [fps, setFps] = useState(0);
-  const [detectionCount, setDetectionCount] = useState(0);
-  const [isVideoReady, setIsVideoReady] = useState(false);
-  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const webcamRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const animationFrameRef = useRef<number>();
-  const lastFrameTimeRef = useRef<number>(0);
-  const fpsCounterRef = useRef<number>(0);
-  const fpsTimerRef = useRef<NodeJS.Timeout>();
 
   // Load the model on component mount
   useEffect(() => {
@@ -67,19 +51,6 @@ export default function ObjectDetection() {
     };
 
     loadModel();
-  }, []);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      stopWebcam();
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-      if (fpsTimerRef.current) {
-        clearInterval(fpsTimerRef.current);
-      }
-    };
   }, []);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -110,47 +81,27 @@ export default function ObjectDetection() {
 
   const handleFile = (file: File) => {
     const isImage = file.type.startsWith('image/');
-    const isVideo = file.type.startsWith('video/');
     
-    if (!isImage && !isVideo) {
-      setError('Please select a valid image or video file.');
+    if (!isImage) {
+      setError('Please select a valid image file.');
       return;
     }
 
-    if (file.size > 50 * 1024 * 1024) { // 50MB limit
-      setError('File size must be less than 50MB.');
+    if (file.size > 10 * 1024 * 1024) { // 10MB limit
+      setError('File size must be less than 10MB.');
       return;
     }
 
     setError(null);
     
-    if (isImage) {
-      setDetectionMode('image');
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        if (e.target?.result) {
-          setSelectedImage(e.target.result as string);
-          detectObjects(e.target.result as string, file.name);
-        }
-      };
-      reader.readAsDataURL(file);
-    } else if (isVideo) {
-      setDetectionMode('video');
-      setVideoFile(file);
-      setIsVideoReady(false);
-      setIsVideoPlaying(false);
-      setIsDetecting(false);
-      const url = URL.createObjectURL(file);
-      if (videoRef.current) {
-        videoRef.current.src = url;
-        videoRef.current.onloadeddata = () => {
-          setIsVideoReady(true);
-        };
-        videoRef.current.onerror = () => {
-          setError('Failed to load video. Please try a different file.');
-        };
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (e.target?.result) {
+        setSelectedImage(e.target.result as string);
+        detectObjects(e.target.result as string, file.name);
       }
-    }
+    };
+    reader.readAsDataURL(file);
   };
 
   const detectObjects = async (imageUrl: string, fileName: string) => {
@@ -198,171 +149,7 @@ export default function ObjectDetection() {
     }
   };
 
-  const detectObjectsInVideo = async (video: HTMLVideoElement) => {
-    if (!model || !video || !isDetecting || video.readyState < 2) return;
-    
-    // Check if video element has valid dimensions
-    const width = video.videoWidth || video.width;
-    const height = video.videoHeight || video.height;
-    
-    if (width === 0 || height === 0) {
-      // Video dimensions not available yet, try again
-      if (isDetecting) {
-        setTimeout(() => detectObjectsInVideo(video), 100);
-      }
-      return;
-    }
-    
-    // For video files, check if playing and ready
-    if (detectionMode === 'video' && (video.paused || video.ended)) return;
-
-    try {
-      const predictions = await model.detect(video);
-      
-      const detections: Detection[] = predictions.map(prediction => ({
-        bbox: prediction.bbox as [number, number, number, number],
-        class: prediction.class,
-        score: prediction.score
-      }));
-
-      drawDetections(video, detections);
-      setDetectionCount(prev => prev + 1);
-      
-      // Update FPS counter
-      const now = performance.now();
-      if (now - lastFrameTimeRef.current >= 1000) {
-        setFps(fpsCounterRef.current);
-        fpsCounterRef.current = 0;
-        lastFrameTimeRef.current = now;
-      } else {
-        fpsCounterRef.current++;
-      }
-
-    } catch (err) {
-      console.error('Video detection error:', err);
-    }
-
-    if (isDetecting) {
-      animationFrameRef.current = requestAnimationFrame(() => detectObjectsInVideo(video));
-    }
-  };
-
-  const startWebcam = async () => {
-    try {
-      setError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: 'user'
-        } 
-      });
-      
-      streamRef.current = stream;
-      if (webcamRef.current) {
-        webcamRef.current.srcObject = stream;
-        webcamRef.current.onloadedmetadata = () => {
-          webcamRef.current?.play().catch(console.error);
-        };
-      }
-      setIsWebcamActive(true);
-      setDetectionMode('webcam');
-    } catch (err) {
-      setError('Failed to access webcam. Please ensure you have granted camera permissions.');
-      console.error('Webcam error:', err);
-    }
-  };
-
-  const stopWebcam = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    setIsWebcamActive(false);
-    setIsDetecting(false);
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-    }
-  };
-
-  const toggleDetection = () => {
-    if (!model) return;
-
-    if (isDetecting) {
-      setIsDetecting(false);
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    } else {
-      setIsDetecting(true);
-      setDetectionCount(0);
-      fpsCounterRef.current = 0;
-      lastFrameTimeRef.current = performance.now();
-      
-      // Start detection immediately
-      if (detectionMode === 'webcam' && webcamRef.current) {
-        detectObjectsInVideo(webcamRef.current);
-      } else if (detectionMode === 'video' && videoRef.current) {
-        detectObjectsInVideo(videoRef.current);
-      }
-    }
-  };
-
-  const playVideo = () => {
-    if (videoRef.current) {
-      const playPromise = videoRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.then(() => {
-          setIsVideoPlaying(true);
-          // Start detection if it's enabled
-          if (isDetecting) {
-            detectObjectsInVideo(videoRef.current!);
-          }
-        }).catch(err => {
-          console.error('Error playing video:', err);
-          setError('Failed to play video. Please try again.');
-        });
-      }
-    }
-  };
-
-  const pauseVideo = () => {
-    if (videoRef.current) {
-      videoRef.current.pause();
-      setIsVideoPlaying(false);
-      // Stop the detection loop when video is paused
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    }
-  };
-
-  // Handle webcam video ready state
-  const handleVideoReady = () => {
-    setIsVideoReady(true);
-  };
-
-  // Handle video play event to restart detection
-  const handleVideoPlay = () => {
-    setIsVideoPlaying(true);
-    if (isDetecting) {
-      detectObjectsInVideo(videoRef.current!);
-    }
-  };
-
-  // Handle video pause event
-  const handleVideoPause = () => {
-    setIsVideoPlaying(false);
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-    }
-  };
-
-  // Handle video loaded data
-  const handleVideoLoadedData = () => {
-    setIsVideoReady(true);
-  };
-  const drawDetections = (source: HTMLImageElement | HTMLVideoElement, detections: Detection[]) => {
+  const drawDetections = (source: HTMLImageElement, detections: Detection[]) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -370,13 +157,8 @@ export default function ObjectDetection() {
     if (!ctx) return;
 
     // Set canvas size to match source
-    if (source instanceof HTMLImageElement) {
-      canvas.width = source.width;
-      canvas.height = source.height;
-    } else {
-      canvas.width = source.videoWidth || source.width || 640;
-      canvas.height = source.videoHeight || source.height || 480;
-    }
+    canvas.width = source.width;
+    canvas.height = source.height;
 
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -426,20 +208,9 @@ export default function ObjectDetection() {
   const clearResults = () => {
     setDetectionResults([]);
     setSelectedImage(null);
-    setIsVideoReady(false);
-    setIsVideoPlaying(false);
-    setVideoFile(null);
     setError(null);
-    setDetectionCount(0);
-    setFps(0);
-    setIsDetecting(false);
-    stopWebcam();
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
-    }
-    if (videoRef.current) {
-      videoRef.current.src = '';
-      videoRef.current.load();
     }
   };
 
@@ -481,49 +252,32 @@ export default function ObjectDetection() {
             <p className="text-sm text-gray-600 dark:text-gray-400">Upload and analyze images</p>
           </button>
           
-          <button
-            onClick={() => setDetectionMode('video')}
-            className={`p-4 rounded-xl border-2 transition-all duration-300 ${
-              detectionMode === 'video'
-                ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
-                : 'border-gray-300 dark:border-gray-600 hover:border-emerald-400'
-            }`}
-          >
-            <Video className="w-8 h-8 mx-auto mb-2 text-emerald-600" />
-            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Video Upload</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Upload and analyze videos</p>
-          </button>
+          <div className="p-4 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50 opacity-60 cursor-not-allowed">
+            <Video className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+            <h3 className="font-semibold text-gray-500 dark:text-gray-400">Video Upload</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Coming Soon</p>
+          </div>
           
-          <button
-            onClick={() => {
-              setDetectionMode('webcam');
-              if (!isWebcamActive) startWebcam();
-            }}
-            className={`p-4 rounded-xl border-2 transition-all duration-300 ${
-              detectionMode === 'webcam'
-                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
-                : 'border-gray-300 dark:border-gray-600 hover:border-purple-400'
-            }`}
-          >
-            <Camera className="w-8 h-8 mx-auto mb-2 text-purple-600" />
-            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Live Webcam</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Real-time detection</p>
-          </button>
+          <div className="p-4 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50 opacity-60 cursor-not-allowed">
+            <Camera className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+            <h3 className="font-semibold text-gray-500 dark:text-gray-400">Live Webcam</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Coming Soon</p>
+          </div>
         </div>
       </div>
 
-      {/* Upload Section - Only show for image/video modes */}
-      {(detectionMode === 'image' || detectionMode === 'video') && (
+      {/* Upload Section - Only show for image mode */}
+      {detectionMode === 'image' && (
         <div className="glass-card dark:glass-card-dark p-8">
           <div className="text-center mb-6">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-emerald-600 rounded-full mb-4 float-animation">
-              {detectionMode === 'image' ? <Upload className="w-8 h-8 text-white" /> : <Video className="w-8 h-8 text-white" />}
+              <Upload className="w-8 h-8 text-white" />
             </div>
             <h2 className="text-2xl font-bold gradient-text mb-2">
-              Upload {detectionMode === 'image' ? 'Image' : 'Video'} for Detection
+              Upload Image for Detection
             </h2>
             <p className="text-gray-600 dark:text-gray-400">
-              Drag and drop {detectionMode === 'image' ? 'an image' : 'a video'} or click to browse
+              Drag and drop an image or click to browse
             </p>
           </div>
 
@@ -541,22 +295,18 @@ export default function ObjectDetection() {
             <input
               ref={fileInputRef}
               type="file"
-              accept={detectionMode === 'image' ? 'image/*' : 'video/*'}
+              accept="image/*"
               onChange={handleFileInput}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             />
             
             <div className="text-center">
-              {detectionMode === 'image' ? (
-                <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              ) : (
-                <Video className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              )}
+              <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
               <p className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Choose {detectionMode === 'image' ? 'an image' : 'a video'} to analyze
+                Choose an image to analyze
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Supports {detectionMode === 'image' ? 'JPG, PNG, GIF' : 'MP4, WebM, MOV'} up to 50MB
+                Supports JPG, PNG, GIF up to 10MB
               </p>
             </div>
           </div>
@@ -570,138 +320,8 @@ export default function ObjectDetection() {
         </div>
       )}
 
-      {/* Webcam Section */}
-      {detectionMode === 'webcam' && (
-        <div className="glass-card dark:glass-card-dark p-8">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-purple-600 to-purple-700 rounded-full flex items-center justify-center">
-                <Camera className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-gray-800 dark:text-gray-200">Live Webcam Detection</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {isWebcamActive ? 'Camera is active' : 'Click to start camera'}
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex space-x-2">
-              {isWebcamActive && (
-                <button
-                  onClick={toggleDetection}
-                  disabled={!model}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-300 ${
-                    isDetecting
-                      ? 'bg-red-600 hover:bg-red-700 text-white'
-                      : `${model ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400 cursor-not-allowed'} text-white`
-                  }`}
-                >
-                  {isDetecting ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                  <span>{isDetecting ? 'Stop' : 'Start'} Detection</span>
-                </button>
-              )}
-              <button
-                onClick={stopWebcam}
-                className="flex items-center space-x-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-all duration-300"
-              >
-                <Square className="w-4 h-4" />
-                <span>Stop Camera</span>
-              </button>
-            </div>
-          </div>
-
-          {isWebcamActive && (
-            <div className="relative">
-              <video
-                ref={webcamRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full max-h-96 rounded-lg bg-black"
-              />
-              {isDetecting && (
-                <div className="absolute top-4 left-4 bg-black/70 text-white px-3 py-1 rounded-lg text-sm">
-                  FPS: {fps} | Detections: {detectionCount}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Video Player Section */}
-      {detectionMode === 'video' && videoFile && (
-        <div className="glass-card dark:glass-card-dark p-8">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-emerald-600 to-emerald-700 rounded-full flex items-center justify-center">
-                <Video className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-gray-800 dark:text-gray-200">Video Detection</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{videoFile.name}</p>
-              </div>
-            </div>
-            
-            <div className="flex space-x-2">
-              <button
-                onClick={isVideoPlaying ? pauseVideo : playVideo}
-                disabled={!isVideoReady}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-300 ${
-                  isVideoReady 
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white' 
-                    : 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                }`}
-              >
-                {isVideoPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                <span>{isVideoPlaying ? 'Pause' : 'Play'}</span>
-              </button>
-              <button
-                onClick={toggleDetection}
-                disabled={!model || (detectionMode === 'video' && !isVideoReady)}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-300 ${
-                  isDetecting
-                    ? 'bg-red-600 hover:bg-red-700 text-white'
-                    : `${model && (detectionMode !== 'video' || isVideoReady) ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400 cursor-not-allowed'} text-white`
-                }`}
-              >
-                <Eye className="w-4 h-4" />
-                <span>{isDetecting ? 'Stop' : 'Start'} Detection</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="relative">
-            <video
-              ref={videoRef}
-              controls
-              className="w-full max-h-96 rounded-lg bg-black"
-              onPlay={handleVideoPlay}
-              onPause={handleVideoPause}
-              onLoadedData={handleVideoLoadedData}
-              onCanPlay={handleVideoLoadedData}
-              preload="metadata"
-            />
-            {isDetecting && (
-              <div className="absolute top-4 left-4 bg-black/70 text-white px-3 py-1 rounded-lg text-sm">
-                FPS: {fps} | Detections: {detectionCount}
-              </div>
-            )}
-            {!isVideoReady && videoFile && (
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg">
-                <div className="text-white text-center">
-                  <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                  <p>Loading video...</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Detection Results Canvas */}
-      {(selectedImage || isWebcamActive || videoFile) && (
+      {selectedImage && (
         <div className="glass-card dark:glass-card-dark p-8">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center space-x-3">
@@ -759,7 +379,7 @@ export default function ObjectDetection() {
             />
           </div>
 
-          {detectionResults.length > 0 && !isLoading && detectionMode === 'image' && (
+          {detectionResults.length > 0 && !isLoading && (
             <div className="mt-6">
               <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4">
                 Detected Objects ({detectionResults[0].detections.length})
@@ -792,8 +412,8 @@ export default function ObjectDetection() {
         </div>
       )}
 
-      {/* Recent Results - Only for images */}
-      {detectionResults.length > 1 && detectionMode === 'image' && (
+      {/* Recent Results */}
+      {detectionResults.length > 1 && (
         <div className="glass-card dark:glass-card-dark p-8">
           <h3 className="text-xl font-bold text-gray-800 dark:text-gray-200 mb-6">
             Recent Detections
