@@ -21,22 +21,13 @@ export default function Header() {
           
           <div className="flex items-center space-x-4">
             <a
-              href="https://github.com/shubham5027/CamvisionAI-computer-vision-based-object-Detection"
+              href="https://github.com/osamaali-mid/VisionTrack-AI"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center space-x-2 px-4 py-2 bg-gray-800 dark:bg-gray-700 text-white rounded-lg hover:bg-gray-900 dark:hover:bg-gray-600 transition-colors duration-300"
             >
               <Github className="w-4 h-4" />
               <span className="hidden sm:inline">GitHub</span>
-            </a>
-            <a
-              href="https://camvision-ai-computer-vision-based-object-detection.vercel.app/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-emerald-600 text-white rounded-lg hover:from-blue-700 hover:to-emerald-700 transition-all duration-300"
-            >
-              <ExternalLink className="w-4 h-4" />
-              <span className="hidden sm:inline">Live Demo</span>
             </a>
           </div>
         </div>
