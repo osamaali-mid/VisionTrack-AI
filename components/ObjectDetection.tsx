@@ -192,13 +192,22 @@ export default function ObjectDetection() {
   };
 
   const detectObjectsInVideo = async (video: HTMLVideoElement) => {
-    if (!model || !video) return;
+    if (!model || !video || !isDetecting) return;
     
-    // For webcam, check if video is playing
-    if (detectionMode === 'webcam' && (video.paused || video.ended || video.readyState < 2)) return;
+    // Check if video element has valid dimensions
+    const width = video.videoWidth || video.width;
+    const height = video.videoHeight || video.height;
     
-    // For video files, check if video is ready and playing
-    if (detectionMode === 'video' && (video.paused || video.ended || video.readyState < 3)) return;
+    if (width === 0 || height === 0) {
+      // Video not ready yet, try again in next frame
+      if (isDetecting) {
+        animationFrameRef.current = requestAnimationFrame(() => detectObjectsInVideo(video));
+      }
+      return;
+    }
+    
+    // For video files, check if playing
+    if (detectionMode === 'video' && video.paused) return;
 
     try {
       const predictions = await model.detect(video);
@@ -234,19 +243,20 @@ export default function ObjectDetection() {
   const startWebcam = async () => {
     try {
       setError(null);
-      setIsDetecting(false);
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { 
           width: { ideal: 1280 },
           height: { ideal: 720 },
-          facingMode: 'environment'
+          facingMode: 'user'
         } 
       });
       
       streamRef.current = stream;
       if (webcamRef.current) {
         webcamRef.current.srcObject = stream;
-        await webcamRef.current.play();
+        webcamRef.current.onloadedmetadata = () => {
+          webcamRef.current?.play().catch(console.error);
+        };
       }
       setIsWebcamActive(true);
       setDetectionMode('webcam');
@@ -282,31 +292,28 @@ export default function ObjectDetection() {
       fpsCounterRef.current = 0;
       lastFrameTimeRef.current = performance.now();
       
-      // Start detection loop
-      const startDetectionLoop = () => {
-        if (detectionMode === 'webcam' && webcamRef.current) {
-          detectObjectsInVideo(webcamRef.current);
-        } else if (detectionMode === 'video' && videoRef.current) {
-          detectObjectsInVideo(videoRef.current);
-        }
-      };
-      
-      // Small delay to ensure video is ready
-      setTimeout(startDetectionLoop, 100);
+      // Start detection immediately
+      if (detectionMode === 'webcam' && webcamRef.current) {
+        detectObjectsInVideo(webcamRef.current);
+      } else if (detectionMode === 'video' && videoRef.current) {
+        detectObjectsInVideo(videoRef.current);
+      }
     }
   };
 
   const playVideo = () => {
     if (videoRef.current) {
-      videoRef.current.play().then(() => {
+      const playPromise = videoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          setIsVideoPlaying(true);
+        }).catch(err => {
+          console.error('Error playing video:', err);
+          setError('Failed to play video. Please try again.');
+        });
+      } else {
         setIsVideoPlaying(true);
-        if (isDetecting) {
-          setTimeout(() => detectObjectsInVideo(videoRef.current!), 100);
-        }
-      }).catch(err => {
-        console.error('Error playing video:', err);
-        setError('Failed to play video. Please try again.');
-      });
+      }
     }
   };
 
@@ -318,21 +325,8 @@ export default function ObjectDetection() {
   };
 
   // Handle webcam video ready state
-  const handleWebcamReady = () => {
-    if (webcamRef.current && webcamRef.current.readyState >= 2) {
-      // Webcam is ready, can start detection if needed
-      if (isDetecting) {
-        detectObjectsInVideo(webcamRef.current);
-      }
-    }
-  };
-
-  // Handle video file ready state
   const handleVideoReady = () => {
     setIsVideoReady(true);
-    if (isDetecting && videoRef.current && !videoRef.current.paused) {
-      detectObjectsInVideo(videoRef.current);
-    }
   };
 
   const drawDetections = (source: HTMLImageElement | HTMLVideoElement, detections: Detection[]) => {
@@ -347,8 +341,8 @@ export default function ObjectDetection() {
       canvas.width = source.width;
       canvas.height = source.height;
     } else {
-      canvas.width = source.videoWidth;
-      canvas.height = source.videoHeight;
+      canvas.width = source.videoWidth || source.width || 640;
+      canvas.height = source.videoHeight || source.height || 480;
     }
 
     // Clear canvas
@@ -588,8 +582,6 @@ export default function ObjectDetection() {
                 autoPlay
                 playsInline
                 muted
-                onLoadedData={handleWebcamReady}
-                onCanPlay={handleWebcamReady}
                 className="w-full max-h-96 rounded-lg bg-black"
               />
               {isDetecting && (
@@ -646,8 +638,7 @@ export default function ObjectDetection() {
               className="w-full max-h-96 rounded-lg bg-black"
               onPlay={() => setIsVideoPlaying(true)}
               onPause={() => setIsVideoPlaying(false)}
-              onLoadedMetadata={handleVideoReady}
-              onCanPlay={handleVideoReady}
+              onLoadedData={handleVideoReady}
             />
             {isDetecting && (
               <div className="absolute top-4 left-4 bg-black/70 text-white px-3 py-1 rounded-lg text-sm">
