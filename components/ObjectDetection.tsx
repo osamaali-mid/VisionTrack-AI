@@ -675,8 +675,8 @@ export default function ObjectDetection() {
               className="w-full max-h-96 rounded-lg bg-black"
               onPlay={handleVideoPlay}
               onPause={handleVideoPause}
-              onLoadedData={handleVideoLoadedData}
-              onCanPlay={handleVideoLoadedData}
+              onLoadedData={handleVideoReady}
+              onCanPlay={handleVideoReady}
               preload="metadata"
             />
             {isDetecting && (
