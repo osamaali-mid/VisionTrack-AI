@@ -1,12 +1,12 @@
 'use client';
 
-import { Zap, Eye, Upload, Download, Shield, Cpu } from 'lucide-react';
+import { Zap, Eye, Upload, Download, Shield, Cpu, Video, Camera } from 'lucide-react';
 
 const features = [
   {
     icon: Eye,
     title: 'Real-time Detection',
-    description: 'Instantly detect and identify objects in uploaded images with high accuracy.',
+    description: 'Instantly detect and identify objects in images, videos, and live webcam feeds.',
     color: 'from-blue-500 to-blue-600'
   },
   {
@@ -18,8 +18,20 @@ const features = [
   {
     icon: Upload,
     title: 'Easy Upload',
-    description: 'Drag and drop or click to upload images. Supports multiple formats.',
+    description: 'Drag and drop or click to upload images and videos. Supports multiple formats.',
     color: 'from-purple-500 to-purple-600'
+  },
+  {
+    icon: Video,
+    title: 'Video Analysis',
+    description: 'Upload and analyze video files with frame-by-frame object detection.',
+    color: 'from-pink-500 to-pink-600'
+  },
+  {
+    icon: Camera,
+    title: 'Live Webcam',
+    description: 'Real-time object detection using your device camera with live FPS monitoring.',
+    color: 'from-cyan-500 to-cyan-600'
   },
   {
     icon: Download,
@@ -33,12 +45,6 @@ const features = [
     description: 'All processing happens in your browser. Your images never leave your device.',
     color: 'from-red-500 to-red-600'
   },
-  {
-    icon: Cpu,
-    title: 'COCO Dataset',
-    description: 'Trained on 80+ object classes from the comprehensive COCO dataset.',
-    color: 'from-indigo-500 to-indigo-600'
-  }
 ];
 
 export default function Features() {
@@ -53,7 +59,7 @@ export default function Features() {
         </p>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
         {features.map((feature, index) => {
           const Icon = feature.icon;
           return (

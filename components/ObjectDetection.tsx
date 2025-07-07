@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Upload, Camera, Zap, Eye, Download, Trash2, AlertCircle } from 'lucide-react';
+import { Upload, Camera, Zap, Eye, Download, Trash2, AlertCircle, Video, Play, Pause, Square, RotateCcw } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
 
@@ -13,9 +13,12 @@ interface Detection {
 
 interface DetectionResult {
   detections: Detection[];
-  imageUrl: string;
-  fileName: string;
+  imageUrl?: string;
+  fileName?: string;
+  timestamp?: number;
 }
+
+type DetectionMode = 'image' | 'video' | 'webcam';
 
 export default function ObjectDetection() {
   const [model, setModel] = useState<cocoSsd.ObjectDetection | null>(null);
@@ -25,9 +28,25 @@ export default function ObjectDetection() {
   const [detectionResults, setDetectionResults] = useState<DetectionResult[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [detectionMode, setDetectionMode] = useState<DetectionMode>('image');
+  
+  // Video/Webcam specific states
+  const [isWebcamActive, setIsWebcamActive] = useState(false);
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [fps, setFps] = useState(0);
+  const [detectionCount, setDetectionCount] = useState(0);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const webcamRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const animationFrameRef = useRef<number>();
+  const lastFrameTimeRef = useRef<number>(0);
+  const fpsCounterRef = useRef<number>(0);
+  const fpsTimerRef = useRef<NodeJS.Timeout>();
 
   // Load the model on component mount
   useEffect(() => {
@@ -47,6 +66,19 @@ export default function ObjectDetection() {
     };
 
     loadModel();
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopWebcam();
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (fpsTimerRef.current) {
+        clearInterval(fpsTimerRef.current);
+      }
+    };
   }, []);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -76,25 +108,40 @@ export default function ObjectDetection() {
   };
 
   const handleFile = (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      setError('Please select a valid image file.');
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+    
+    if (!isImage && !isVideo) {
+      setError('Please select a valid image or video file.');
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) { // 10MB limit
-      setError('File size must be less than 10MB.');
+    if (file.size > 50 * 1024 * 1024) { // 50MB limit
+      setError('File size must be less than 50MB.');
       return;
     }
 
     setError(null);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      if (e.target?.result) {
-        setSelectedImage(e.target.result as string);
-        detectObjects(e.target.result as string, file.name);
+    
+    if (isImage) {
+      setDetectionMode('image');
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (e.target?.result) {
+          setSelectedImage(e.target.result as string);
+          detectObjects(e.target.result as string, file.name);
+        }
+      };
+      reader.readAsDataURL(file);
+    } else if (isVideo) {
+      setDetectionMode('video');
+      setVideoFile(file);
+      const url = URL.createObjectURL(file);
+      if (videoRef.current) {
+        videoRef.current.src = url;
+        videoRef.current.load();
       }
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const detectObjects = async (imageUrl: string, fileName: string) => {
@@ -127,10 +174,11 @@ export default function ObjectDetection() {
       const result: DetectionResult = {
         detections,
         imageUrl,
-        fileName
+        fileName,
+        timestamp: Date.now()
       };
 
-      setDetectionResults(prev => [result, ...prev.slice(0, 4)]); // Keep last 5 results
+      setDetectionResults(prev => [result, ...prev.slice(0, 4)]);
       drawDetections(img, detections);
       
     } catch (err) {
@@ -141,19 +189,136 @@ export default function ObjectDetection() {
     }
   };
 
-  const drawDetections = (img: HTMLImageElement, detections: Detection[]) => {
+  const detectObjectsInVideo = async (video: HTMLVideoElement) => {
+    if (!model || !video || video.paused || video.ended) return;
+
+    try {
+      const predictions = await model.detect(video);
+      
+      const detections: Detection[] = predictions.map(prediction => ({
+        bbox: prediction.bbox as [number, number, number, number],
+        class: prediction.class,
+        score: prediction.score
+      }));
+
+      drawDetections(video, detections);
+      setDetectionCount(prev => prev + 1);
+      
+      // Update FPS counter
+      const now = performance.now();
+      if (now - lastFrameTimeRef.current >= 1000) {
+        setFps(fpsCounterRef.current);
+        fpsCounterRef.current = 0;
+        lastFrameTimeRef.current = now;
+      } else {
+        fpsCounterRef.current++;
+      }
+
+    } catch (err) {
+      console.error('Video detection error:', err);
+    }
+
+    if (isDetecting) {
+      animationFrameRef.current = requestAnimationFrame(() => detectObjectsInVideo(video));
+    }
+  };
+
+  const startWebcam = async () => {
+    try {
+      setError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: 'environment'
+        } 
+      });
+      
+      streamRef.current = stream;
+      if (webcamRef.current) {
+        webcamRef.current.srcObject = stream;
+        webcamRef.current.play();
+      }
+      setIsWebcamActive(true);
+      setDetectionMode('webcam');
+    } catch (err) {
+      setError('Failed to access webcam. Please ensure you have granted camera permissions.');
+      console.error('Webcam error:', err);
+    }
+  };
+
+  const stopWebcam = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setIsWebcamActive(false);
+    setIsDetecting(false);
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+  };
+
+  const toggleDetection = () => {
+    if (!model) return;
+
+    if (isDetecting) {
+      setIsDetecting(false);
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    } else {
+      setIsDetecting(true);
+      setDetectionCount(0);
+      fpsCounterRef.current = 0;
+      lastFrameTimeRef.current = performance.now();
+      
+      if (detectionMode === 'webcam' && webcamRef.current) {
+        detectObjectsInVideo(webcamRef.current);
+      } else if (detectionMode === 'video' && videoRef.current) {
+        detectObjectsInVideo(videoRef.current);
+      }
+    }
+  };
+
+  const playVideo = () => {
+    if (videoRef.current) {
+      videoRef.current.play();
+      setIsVideoPlaying(true);
+      if (isDetecting) {
+        detectObjectsInVideo(videoRef.current);
+      }
+    }
+  };
+
+  const pauseVideo = () => {
+    if (videoRef.current) {
+      videoRef.current.pause();
+      setIsVideoPlaying(false);
+    }
+  };
+
+  const drawDetections = (source: HTMLImageElement | HTMLVideoElement, detections: Detection[]) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set canvas size to match image
-    canvas.width = img.width;
-    canvas.height = img.height;
+    // Set canvas size to match source
+    if (source instanceof HTMLImageElement) {
+      canvas.width = source.width;
+      canvas.height = source.height;
+    } else {
+      canvas.width = source.videoWidth;
+      canvas.height = source.videoHeight;
+    }
 
-    // Draw the image
-    ctx.drawImage(img, 0, 0);
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw the source
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
 
     // Draw detections
     detections.forEach((detection, index) => {
@@ -161,7 +326,7 @@ export default function ObjectDetection() {
       const confidence = Math.round(detection.score * 100);
       
       // Generate a color based on the class
-      const hue = (index * 137.508) % 360; // Golden angle approximation
+      const hue = (index * 137.508) % 360;
       const color = `hsl(${hue}, 70%, 50%)`;
       
       // Draw bounding box
@@ -189,7 +354,7 @@ export default function ObjectDetection() {
     if (!canvas) return;
 
     const link = document.createElement('a');
-    link.download = 'object-detection-result.png';
+    link.download = `detection-result-${Date.now()}.png`;
     link.href = canvas.toDataURL();
     link.click();
   };
@@ -197,9 +362,16 @@ export default function ObjectDetection() {
   const clearResults = () => {
     setDetectionResults([]);
     setSelectedImage(null);
+    setVideoFile(null);
     setError(null);
+    setDetectionCount(0);
+    setFps(0);
+    stopWebcam();
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+    if (videoRef.current) {
+      videoRef.current.src = '';
     }
   };
 
@@ -224,58 +396,226 @@ export default function ObjectDetection() {
 
   return (
     <div className="space-y-8">
-      {/* Upload Section */}
-      <div className="glass-card dark:glass-card-dark p-8">
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-emerald-600 rounded-full mb-4 float-animation">
-            <Camera className="w-8 h-8 text-white" />
-          </div>
-          <h2 className="text-2xl font-bold gradient-text mb-2">Upload Image for Detection</h2>
-          <p className="text-gray-600 dark:text-gray-400">
-            Drag and drop an image or click to browse
-          </p>
-        </div>
-
-        <div
-          className={`relative border-2 border-dashed rounded-xl p-8 transition-all duration-300 ${
-            dragActive
-              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-              : 'border-gray-300 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-500'
-          }`}
-          onDragEnter={handleDrag}
-          onDragLeave={handleDrag}
-          onDragOver={handleDrag}
-          onDrop={handleDrop}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleFileInput}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          />
+      {/* Mode Selection */}
+      <div className="glass-card dark:glass-card-dark p-6">
+        <h2 className="text-xl font-bold gradient-text mb-4 text-center">Choose Detection Mode</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <button
+            onClick={() => setDetectionMode('image')}
+            className={`p-4 rounded-xl border-2 transition-all duration-300 ${
+              detectionMode === 'image'
+                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                : 'border-gray-300 dark:border-gray-600 hover:border-blue-400'
+            }`}
+          >
+            <Upload className="w-8 h-8 mx-auto mb-2 text-blue-600" />
+            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Image Upload</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Upload and analyze images</p>
+          </button>
           
-          <div className="text-center">
-            <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Choose an image to analyze
-            </p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Supports JPG, PNG, GIF up to 10MB
-            </p>
-          </div>
+          <button
+            onClick={() => setDetectionMode('video')}
+            className={`p-4 rounded-xl border-2 transition-all duration-300 ${
+              detectionMode === 'video'
+                ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                : 'border-gray-300 dark:border-gray-600 hover:border-emerald-400'
+            }`}
+          >
+            <Video className="w-8 h-8 mx-auto mb-2 text-emerald-600" />
+            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Video Upload</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Upload and analyze videos</p>
+          </button>
+          
+          <button
+            onClick={() => {
+              setDetectionMode('webcam');
+              if (!isWebcamActive) startWebcam();
+            }}
+            className={`p-4 rounded-xl border-2 transition-all duration-300 ${
+              detectionMode === 'webcam'
+                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                : 'border-gray-300 dark:border-gray-600 hover:border-purple-400'
+            }`}
+          >
+            <Camera className="w-8 h-8 mx-auto mb-2 text-purple-600" />
+            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Live Webcam</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Real-time detection</p>
+          </button>
         </div>
-
-        {error && (
-          <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center space-x-2">
-            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
-            <p className="text-red-700 dark:text-red-300">{error}</p>
-          </div>
-        )}
       </div>
 
-      {/* Detection Results */}
-      {selectedImage && (
+      {/* Upload Section - Only show for image/video modes */}
+      {(detectionMode === 'image' || detectionMode === 'video') && (
+        <div className="glass-card dark:glass-card-dark p-8">
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-emerald-600 rounded-full mb-4 float-animation">
+              {detectionMode === 'image' ? <Upload className="w-8 h-8 text-white" /> : <Video className="w-8 h-8 text-white" />}
+            </div>
+            <h2 className="text-2xl font-bold gradient-text mb-2">
+              Upload {detectionMode === 'image' ? 'Image' : 'Video'} for Detection
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400">
+              Drag and drop {detectionMode === 'image' ? 'an image' : 'a video'} or click to browse
+            </p>
+          </div>
+
+          <div
+            className={`relative border-2 border-dashed rounded-xl p-8 transition-all duration-300 ${
+              dragActive
+                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                : 'border-gray-300 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-500'
+            }`}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={detectionMode === 'image' ? 'image/*' : 'video/*'}
+              onChange={handleFileInput}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
+            
+            <div className="text-center">
+              {detectionMode === 'image' ? (
+                <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              ) : (
+                <Video className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              )}
+              <p className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Choose {detectionMode === 'image' ? 'an image' : 'a video'} to analyze
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Supports {detectionMode === 'image' ? 'JPG, PNG, GIF' : 'MP4, WebM, MOV'} up to 50MB
+              </p>
+            </div>
+          </div>
+
+          {error && (
+            <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center space-x-2">
+              <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+              <p className="text-red-700 dark:text-red-300">{error}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Webcam Section */}
+      {detectionMode === 'webcam' && (
+        <div className="glass-card dark:glass-card-dark p-8">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-purple-600 to-purple-700 rounded-full flex items-center justify-center">
+                <Camera className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-800 dark:text-gray-200">Live Webcam Detection</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {isWebcamActive ? 'Camera is active' : 'Click to start camera'}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex space-x-2">
+              {isWebcamActive && (
+                <button
+                  onClick={toggleDetection}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-300 ${
+                    isDetecting
+                      ? 'bg-red-600 hover:bg-red-700 text-white'
+                      : 'bg-green-600 hover:bg-green-700 text-white'
+                  }`}
+                >
+                  {isDetecting ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                  <span>{isDetecting ? 'Stop' : 'Start'} Detection</span>
+                </button>
+              )}
+              <button
+                onClick={stopWebcam}
+                className="flex items-center space-x-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-all duration-300"
+              >
+                <Square className="w-4 h-4" />
+                <span>Stop Camera</span>
+              </button>
+            </div>
+          </div>
+
+          {isWebcamActive && (
+            <div className="relative">
+              <video
+                ref={webcamRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full max-h-96 rounded-lg bg-black"
+              />
+              {isDetecting && (
+                <div className="absolute top-4 left-4 bg-black/70 text-white px-3 py-1 rounded-lg text-sm">
+                  FPS: {fps} | Detections: {detectionCount}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Video Player Section */}
+      {detectionMode === 'video' && videoFile && (
+        <div className="glass-card dark:glass-card-dark p-8">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-emerald-600 to-emerald-700 rounded-full flex items-center justify-center">
+                <Video className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-800 dark:text-gray-200">Video Detection</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{videoFile.name}</p>
+              </div>
+            </div>
+            
+            <div className="flex space-x-2">
+              <button
+                onClick={isVideoPlaying ? pauseVideo : playVideo}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all duration-300"
+              >
+                {isVideoPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                <span>{isVideoPlaying ? 'Pause' : 'Play'}</span>
+              </button>
+              <button
+                onClick={toggleDetection}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-300 ${
+                  isDetecting
+                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                    : 'bg-green-600 hover:bg-green-700 text-white'
+                }`}
+              >
+                <Eye className="w-4 h-4" />
+                <span>{isDetecting ? 'Stop' : 'Start'} Detection</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="relative">
+            <video
+              ref={videoRef}
+              controls
+              className="w-full max-h-96 rounded-lg bg-black"
+              onPlay={() => setIsVideoPlaying(true)}
+              onPause={() => setIsVideoPlaying(false)}
+            />
+            {isDetecting && (
+              <div className="absolute top-4 left-4 bg-black/70 text-white px-3 py-1 rounded-lg text-sm">
+                FPS: {fps} | Detections: {detectionCount}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Detection Results Canvas */}
+      {(selectedImage || isWebcamActive || videoFile) && (
         <div className="glass-card dark:glass-card-dark p-8">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center space-x-3">
@@ -287,7 +627,7 @@ export default function ObjectDetection() {
                   Detection Results
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {isLoading ? 'Analyzing image...' : 'Objects detected and highlighted'}
+                  {isLoading ? 'Analyzing...' : 'Objects detected and highlighted'}
                 </p>
               </div>
             </div>
@@ -295,7 +635,7 @@ export default function ObjectDetection() {
             <div className="flex space-x-2">
               <button
                 onClick={downloadResult}
-                disabled={isLoading || detectionResults.length === 0}
+                disabled={isLoading}
                 className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
               >
                 <Download className="w-4 h-4" />
@@ -305,8 +645,8 @@ export default function ObjectDetection() {
                 onClick={clearResults}
                 className="btn-primary flex items-center space-x-2"
               >
-                <Trash2 className="w-4 h-4" />
-                <span>Clear</span>
+                <RotateCcw className="w-4 h-4" />
+                <span>Reset</span>
               </button>
             </div>
           </div>
@@ -320,7 +660,7 @@ export default function ObjectDetection() {
                     <Zap className="absolute inset-0 w-6 h-6 text-blue-600 m-auto" />
                   </div>
                   <p className="text-lg font-medium text-gray-700 dark:text-gray-300">
-                    AI is analyzing your image...
+                    AI is analyzing...
                   </p>
                 </div>
               </div>
@@ -333,7 +673,7 @@ export default function ObjectDetection() {
             />
           </div>
 
-          {detectionResults.length > 0 && !isLoading && (
+          {detectionResults.length > 0 && !isLoading && detectionMode === 'image' && (
             <div className="mt-6">
               <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4">
                 Detected Objects ({detectionResults[0].detections.length})
@@ -366,8 +706,8 @@ export default function ObjectDetection() {
         </div>
       )}
 
-      {/* Recent Results */}
-      {detectionResults.length > 1 && (
+      {/* Recent Results - Only for images */}
+      {detectionResults.length > 1 && detectionMode === 'image' && (
         <div className="glass-card dark:glass-card-dark p-8">
           <h3 className="text-xl font-bold text-gray-800 dark:text-gray-200 mb-6">
             Recent Detections
@@ -378,19 +718,23 @@ export default function ObjectDetection() {
                 key={index}
                 className="bg-white/30 dark:bg-gray-800/30 backdrop-blur-sm rounded-lg p-4 border border-white/20 dark:border-gray-700/50 hover:bg-white/40 dark:hover:bg-gray-800/40 transition-all duration-300 cursor-pointer"
                 onClick={() => {
-                  setSelectedImage(result.imageUrl);
-                  const img = new Image();
-                  img.onload = () => drawDetections(img, result.detections);
-                  img.src = result.imageUrl;
+                  if (result.imageUrl) {
+                    setSelectedImage(result.imageUrl);
+                    const img = new Image();
+                    img.onload = () => drawDetections(img, result.detections);
+                    img.src = result.imageUrl;
+                  }
                 }}
               >
-                <img
-                  src={result.imageUrl}
-                  alt={result.fileName}
-                  className="w-full h-32 object-cover rounded-lg mb-3"
-                />
+                {result.imageUrl && (
+                  <img
+                    src={result.imageUrl}
+                    alt={result.fileName}
+                    className="w-full h-32 object-cover rounded-lg mb-3"
+                  />
+                )}
                 <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                  {result.fileName}
+                  {result.fileName || 'Detection Result'}
                 </p>
                 <p className="text-xs text-gray-600 dark:text-gray-400">
                   {result.detections.length} objects detected

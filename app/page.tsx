@@ -13,11 +13,11 @@ export default function Home() {
         <div className="text-center mb-12">
           <div className="glass-card dark:glass-card-dark p-12 mb-8">
             <h1 className="text-5xl md:text-6xl font-bold gradient-text mb-6 leading-tight">
-              AI-Powered Object Detection
+              AI-Powered Vision Platform
             </h1>
             <p className="text-xl text-gray-600 dark:text-gray-400 mb-8 max-w-3xl mx-auto leading-relaxed">
               Experience the future of computer vision with our advanced TensorFlow.js implementation. 
-              Upload any image and watch our AI identify objects with incredible precision.
+              Upload images, videos, or use your webcam for real-time object detection with incredible precision.
             </p>
             <div className="flex flex-wrap justify-center gap-4 text-sm text-gray-500 dark:text-gray-400">
               <span className="flex items-center space-x-2 bg-white/20 dark:bg-gray-800/20 px-3 py-1 rounded-full">
@@ -35,6 +35,10 @@ export default function Home() {
               <span className="flex items-center space-x-2 bg-white/20 dark:bg-gray-800/20 px-3 py-1 rounded-full">
                 <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
                 <span>Real-time Processing</span>
+              </span>
+              <span className="flex items-center space-x-2 bg-white/20 dark:bg-gray-800/20 px-3 py-1 rounded-full">
+                <span className="w-2 h-2 bg-pink-500 rounded-full"></span>
+                <span>Video & Webcam Support</span>
               </span>
             </div>
           </div>
@@ -56,14 +60,16 @@ export default function Home() {
               Ready to Explore AI Vision?
             </h3>
             <p className="text-gray-600 dark:text-gray-400 mb-6">
-              Upload your first image and experience the power of modern computer vision technology. 
-              Our AI can detect and classify 80+ different object types with remarkable accuracy.
+              Upload images or videos, or use your webcam to experience the power of modern computer vision technology. 
+              Our AI can detect and classify 80+ different object types in real-time with remarkable accuracy.
             </p>
             <div className="flex flex-wrap justify-center gap-6 text-sm text-gray-500 dark:text-gray-400">
               <span>✨ No registration required</span>
               <span>🔒 Privacy-first processing</span>
               <span>⚡ Lightning-fast results</span>
               <span>📱 Works on all devices</span>
+              <span>🎥 Video & webcam support</span>
+              <span>📊 Real-time analytics</span>
             </div>
             <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
               <p className="text-gray-500 dark:text-gray-400">
