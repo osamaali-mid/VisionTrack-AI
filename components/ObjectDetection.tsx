@@ -37,6 +37,7 @@ export default function ObjectDetection() {
   const [isDetecting, setIsDetecting] = useState(false);
   const [fps, setFps] = useState(0);
   const [detectionCount, setDetectionCount] = useState(0);
+  const [isVideoReady, setIsVideoReady] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -141,6 +142,7 @@ export default function ObjectDetection() {
         videoRef.current.src = url;
         videoRef.current.load();
       }
+      setIsVideoReady(false);
     }
   };
 
@@ -262,6 +264,12 @@ export default function ObjectDetection() {
   const toggleDetection = () => {
     if (!model) return;
 
+    // For video mode, ensure video is ready before starting detection
+    if (detectionMode === 'video' && !isVideoReady) {
+      setError('Please wait for the video to load completely before starting detection.');
+      return;
+    }
+
     if (isDetecting) {
       setIsDetecting(false);
       if (animationFrameRef.current) {
@@ -366,6 +374,7 @@ export default function ObjectDetection() {
     setError(null);
     setDetectionCount(0);
     setFps(0);
+    setIsVideoReady(false);
     stopWebcam();
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -588,8 +597,9 @@ export default function ObjectDetection() {
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-300 ${
                   isDetecting
                     ? 'bg-red-600 hover:bg-red-700 text-white'
-                    : 'bg-green-600 hover:bg-green-700 text-white'
+                    : `${isVideoReady ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400 cursor-not-allowed'} text-white`
                 }`}
+                disabled={!isVideoReady && !isDetecting}
               >
                 <Eye className="w-4 h-4" />
                 <span>{isDetecting ? 'Stop' : 'Start'} Detection</span>
@@ -604,6 +614,7 @@ export default function ObjectDetection() {
               className="w-full max-h-96 rounded-lg bg-black"
               onPlay={() => setIsVideoPlaying(true)}
               onPause={() => setIsVideoPlaying(false)}
+              onLoadedMetadata={() => setIsVideoReady(true)}
             />
             {isDetecting && (
               <div className="absolute top-4 left-4 bg-black/70 text-white px-3 py-1 rounded-lg text-sm">
