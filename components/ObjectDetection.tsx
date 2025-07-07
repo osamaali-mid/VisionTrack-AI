@@ -307,12 +307,20 @@ export default function ObjectDetection() {
       if (playPromise !== undefined) {
         playPromise.then(() => {
           setIsVideoPlaying(true);
+          // Start detection if it's enabled
+          if (isDetecting) {
+            detectObjectsInVideo(videoRef.current!);
+          }
         }).catch(err => {
           console.error('Error playing video:', err);
           setError('Failed to play video. Please try again.');
         });
       } else {
         setIsVideoPlaying(true);
+        // Start detection if it's enabled
+        if (isDetecting) {
+          detectObjectsInVideo(videoRef.current);
+        }
       }
     }
   };
@@ -321,6 +329,10 @@ export default function ObjectDetection() {
     if (videoRef.current) {
       videoRef.current.pause();
       setIsVideoPlaying(false);
+      // Stop the detection loop when video is paused
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     }
   };
 
@@ -329,6 +341,21 @@ export default function ObjectDetection() {
     setIsVideoReady(true);
   };
 
+  // Handle video play event to restart detection
+  const handleVideoPlay = () => {
+    setIsVideoPlaying(true);
+    if (isDetecting) {
+      detectObjectsInVideo(videoRef.current!);
+    }
+  };
+
+  // Handle video pause event
+  const handleVideoPause = () => {
+    setIsVideoPlaying(false);
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+  };
   const drawDetections = (source: HTMLImageElement | HTMLVideoElement, detections: Detection[]) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -641,8 +668,8 @@ export default function ObjectDetection() {
               ref={videoRef}
               controls
               className="w-full max-h-96 rounded-lg bg-black"
-              onPlay={() => setIsVideoPlaying(true)}
-              onPause={() => setIsVideoPlaying(false)}
+              onPlay={handleVideoPlay}
+              onPause={handleVideoPause}
               onLoadedData={handleVideoReady}
             />
             {isDetecting && (
