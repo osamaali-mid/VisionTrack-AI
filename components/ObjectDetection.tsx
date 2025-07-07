@@ -611,7 +611,12 @@ export default function ObjectDetection() {
             <div className="flex space-x-2">
               <button
                 onClick={isVideoPlaying ? pauseVideo : playVideo}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all duration-300"
+                disabled={!isVideoReady}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-300 ${
+                  isVideoReady 
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                    : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                }`}
               >
                 {isVideoPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                 <span>{isVideoPlaying ? 'Pause' : 'Play'}</span>
